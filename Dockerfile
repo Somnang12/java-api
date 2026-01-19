@@ -1,25 +1,28 @@
 # --- Stage 1: Build the application ---
-FROM gradle:8-jdk21 AS build
-COPY --chown=gradle:gradle . /home/gradle/src
+FROM gradle:8.10-jdk21 AS build
 WORKDIR /home/gradle/src
 
-# Build the WAR/JAR file (skipping tests for faster deployment)
-RUN gradle build -x test --no-daemon
+# Copy only the necessary files for dependency resolution first (for caching)
+COPY --chown=gradle:gradle build.gradle settings.gradle ./
+COPY --chown=gradle:gradle gradle/ ./gradle/
 
-# --- Stage 2: Run the application ---
+# Copy the rest of the source code
+COPY --chown=gradle:gradle . .
+
+# Build the WAR file, skipping tests for speed
+RUN gradle bootWar -x test --no-daemon
+
+# --- Stage 2: Runtime Environment ---
 FROM eclipse-temurin:21-jre-jammy
 WORKDIR /app
 
-# Copy the built artifact from the build stage
-# Note: Since you have id 'war' in your gradle, the output is likely a .war file
-COPY --from=build /home/gradle/src/build/libs/*.war app.war
+# Copy the generated WAR from the build stage
+# We rename it to 'app.war' to match our CMD
+COPY --from=build /home/gradle/src/build/libs/app.war app.war
 
-# Set environment variables (optional defaults)
+# Set the port Render expects (8080 by default for Spring Boot)
 ENV PORT=8080
 EXPOSE 8080
 
 # Command to run the application
 ENTRYPOINT ["java", "-jar", "app.war"]
-
-
-
